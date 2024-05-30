@@ -168,6 +168,12 @@ func (g *Game) generateMoves(board [90]int, colorToMove string, start int) {
 			g.generateCannonMoves(board, start, piece)
 		case Horse:
 			g.generateHorseMoves(board, start, piece)
+		case Elephant:
+			g.generateElephantMoves(board, start, piece)
+		case Advisor:
+			g.generateAdvisorMoves(board, start, piece)
+		case General:
+			g.generateGeneralMoves(board, start, piece)
 		}
 		// todo:
 	}
@@ -223,24 +229,62 @@ func (g *Game) generateCannonMoves(board [90]int, start, piece int) {
 func (g *Game) generateHorseMoves(board [90]int, start, piece int) {
 	currentColor := pieceColor(piece)
 	targets := make(map[int]bool)
-	for _, direc := range HorseDirectionOffests {
-		targets[start+direc] = true
+	for _, direction := range HorseDirectionOffsets {
+		targets[start+direction] = true
 	}
 	for i := 0; i < 4; i++ {
 		switch NumPosToEdge[start][i+4] {
-		case 0:
-			break
-		case 1:
-			// todo: 距离为1时的处理
+		case 0, 1:
+			// 判断蹩马腿的位置是否在棋盘边缘，如果在的话说明这个目标点一定是不可达的。
+			target := start + HorseDirectionOffsets[2*i]
+			if target >= 0 && target <= 89 && !BoardEdge[start+HorseLameOffsets[2*i]] &&
+				board[start+HorseLameOffsets[2*i]] == None && pieceColor(board[target]) != currentColor {
+				g.Moves = append(g.Moves, Move{start, target})
+			}
+			target = start + HorseDirectionOffsets[2*i+1]
+			if target >= 0 && target <= 89 && !BoardEdge[start+HorseLameOffsets[2*i+1]] &&
+				board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(board[target]) != currentColor {
+				g.Moves = append(g.Moves, Move{start, target})
+			}
 		default:
-			target := start + HorseDirectionOffests[2*i]
-			if board[start+HorseLameOffsets[2*i]] == 0 && pieceColor(board[target]) != currentColor {
+			target := start + HorseDirectionOffsets[2*i]
+			if board[start+HorseLameOffsets[2*i]] == None && pieceColor(board[target]) != currentColor {
 				g.Moves = append(g.Moves, Move{start, target})
 			}
-			target = start + HorseDirectionOffests[2*i+1]
-			if board[start+HorseLameOffsets[2*i+1]] == 0 && pieceColor(board[target]) != currentColor {
+			target = start + HorseDirectionOffsets[2*i+1]
+			if board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(board[target]) != currentColor {
 				g.Moves = append(g.Moves, Move{start, target})
 			}
+		}
+	}
+}
+
+func (g *Game) generateElephantMoves(board [90]int, start int, piece int) {
+	currentColor := pieceColor(piece)
+	targets := ElephantTarget[start]
+	for _, target := range targets {
+		if board[(start+target)/2] == None && pieceColor(board[target]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, target})
+		}
+	}
+}
+
+func (g *Game) generateAdvisorMoves(board [90]int, start int, piece int) {
+	currentColor := pieceColor(piece)
+	targets := AdvisorTarget[start]
+	for _, target := range targets {
+		if pieceColor(board[target]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, target})
+		}
+	}
+}
+
+func (g *Game) generateGeneralMoves(board [90]int, start int, piece int) {
+	currentColor := pieceColor(piece)
+	targets := GeneralTarget[start]
+	for _, target := range targets {
+		if pieceColor(board[target]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, target})
 		}
 	}
 }
