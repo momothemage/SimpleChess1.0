@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"main/core/resource"
 	"strconv"
@@ -13,7 +12,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
-// 此文件用于管理游戏进程
+// Game 此类用于管理游戏进程
 type Game struct {
 	selected int //选中的格子
 	FEN      string
@@ -23,7 +22,7 @@ type Game struct {
 	turn      bool                  //轮到谁走，true红方，false黑方
 	lastMove  int                   //上一步棋
 	flipped   bool                  //是否翻转棋盘
-	gameover  bool                  //是否游戏结束
+	gameOver  bool                  //是否游戏结束
 	message   string                //显示内容
 	images    map[int]*ebiten.Image //图片资源
 	situation *Situation            //棋局单例
@@ -73,6 +72,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	// 绘制其他棋子
 	g.drawByFEN(screen)
+	if g.gameOver {
+		g.messageBox(screen)
+	}
 }
 
 func (g *Game) Update() error {
@@ -111,15 +113,19 @@ func (g *Game) Update() error {
 func (g *Game) move(origin, goal int) {
 	fenData := strings.Split(g.FEN, " ")
 	board := LoadPositionByPieces(fenData[0])
+	colorToMove := fenData[1]
 	halfMoves := toInt(fenData[2])
 	totalMoves := toInt(fenData[3]) + 1
 	if board[goal] != 0 {
 		halfMoves = 0
 	}
 
-	g.generateMoves(board, fenData[1], origin) // todo: 直接生成所有可用的move，而不是只生成当前选中的棋子
-	fmt.Println(g.Moves)
+	g.generateMoves(board, colorToMove, origin) // todo: 直接生成所有可用的move，而不是只生成当前选中的棋子
+	// fmt.Println(g.Moves)
 	for _, move := range g.Moves {
+		if pieceType(board[goal]) == General {
+			g.gameOver = true
+		}
 		if move.Target == goal {
 			board[origin], board[goal] = 0, board[origin]
 			g.FEN = TransferBoardToPieces(board) + " " + switchPlayer(fenData[1]) + " " + strconv.Itoa(halfMoves) + " " + strconv.Itoa(totalMoves)
@@ -158,7 +164,6 @@ func (g *Game) drawChess(x, y int, screen, img *ebiten.Image) {
 
 func (g *Game) generateMoves(board [90]int, colorToMove string, start int) {
 	g.Moves = make([]Move, 0)
-	//for i := 0; i < TotalNum; i++ {
 	piece := board[start]
 	if isRedPiece(piece) && colorToMove == RedMove || isBlackPiece(piece) && colorToMove == BlackMove {
 		switch pieceType(piece) {
@@ -174,10 +179,10 @@ func (g *Game) generateMoves(board [90]int, colorToMove string, start int) {
 			g.generateAdvisorMoves(board, start, piece)
 		case General:
 			g.generateGeneralMoves(board, start, piece)
+		case Soldier:
+			g.generateSoldierMoves(board, start, piece)
 		}
-		// todo:
 	}
-	//}
 }
 
 func (g *Game) generateRookMoves(board [90]int, start, piece int) {
@@ -228,10 +233,6 @@ func (g *Game) generateCannonMoves(board [90]int, start, piece int) {
 
 func (g *Game) generateHorseMoves(board [90]int, start, piece int) {
 	currentColor := pieceColor(piece)
-	targets := make(map[int]bool)
-	for _, direction := range HorseDirectionOffsets {
-		targets[start+direction] = true
-	}
 	for i := 0; i < 4; i++ {
 		switch NumPosToEdge[start][i+4] {
 		case 0, 1:
@@ -261,7 +262,7 @@ func (g *Game) generateHorseMoves(board [90]int, start, piece int) {
 
 func (g *Game) generateElephantMoves(board [90]int, start int, piece int) {
 	currentColor := pieceColor(piece)
-	targets := ElephantTarget[start]
+	targets := ElephantTargets[start]
 	for _, target := range targets {
 		if board[(start+target)/2] == None && pieceColor(board[target]) != currentColor {
 			g.Moves = append(g.Moves, Move{start, target})
@@ -271,7 +272,7 @@ func (g *Game) generateElephantMoves(board [90]int, start int, piece int) {
 
 func (g *Game) generateAdvisorMoves(board [90]int, start int, piece int) {
 	currentColor := pieceColor(piece)
-	targets := AdvisorTarget[start]
+	targets := AdvisorTargets[start]
 	for _, target := range targets {
 		if pieceColor(board[target]) != currentColor {
 			g.Moves = append(g.Moves, Move{start, target})
@@ -281,12 +282,39 @@ func (g *Game) generateAdvisorMoves(board [90]int, start int, piece int) {
 
 func (g *Game) generateGeneralMoves(board [90]int, start int, piece int) {
 	currentColor := pieceColor(piece)
-	targets := GeneralTarget[start]
+	targets := GeneralTargets[start]
 	for _, target := range targets {
-		if pieceColor(board[target]) != currentColor {
+		if pieceColor(board[target]) != currentColor && !isFacedToGeneral(board, target, currentColor) {
 			g.Moves = append(g.Moves, Move{start, target})
 		}
 	}
+}
+
+func (g *Game) generateSoldierMoves(board [90]int, start int, piece int) {
+	currentColor := pieceColor(piece)
+	if isRedPiece(piece) {
+		if pieceColor(board[start-9]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, start - 9})
+		} else if onUpperBoard(start) && pieceColor(board[start-1]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, start - 1})
+		} else if onUpperBoard(start) && pieceColor(board[start+1]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, start + 1})
+		}
+	} else {
+		if pieceColor(board[start+9]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, start + 9})
+		} else if onLowerBoard(start) && pieceColor(board[start-1]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, start - 1})
+		} else if onLowerBoard(start) && pieceColor(board[start+1]) != currentColor {
+			g.Moves = append(g.Moves, Move{start, start + 1})
+		}
+	}
+}
+
+// messageBox 提示
+func (g *Game) messageBox(screen *ebiten.Image) {
+	// todo: 弹出提示并阻塞进程
+	return
 }
 
 // NewGame 创建象棋程序

@@ -99,7 +99,7 @@ var (
 	DirectionOffsets      = []int{-9, 9, -1, 1}
 	HorseDirectionOffsets = []int{-11, -19, 11, 19, -17, -7, 17, 7}
 	HorseLameOffsets      = []int{-1, -9, 1, 9, -9, 1, 9, -1}
-	ElephantTarget        = map[int][]int{
+	ElephantTargets       = map[int][]int{
 		2:  {18, 22},
 		6:  {22, 26},
 		18: {2, 38},
@@ -115,11 +115,11 @@ var (
 		83: {63, 67},
 		87: {67, 71},
 	}
-	AdvisorTarget = map[int][]int{
+	AdvisorTargets = map[int][]int{
 		3: {13}, 5: {13}, 21: {13}, 23: {13}, 13: {3, 5, 21, 23},
 		66: {76}, 68: {76}, 84: {76}, 86: {76}, 76: {66, 68, 84, 86},
 	}
-	GeneralTarget = map[int][]int{
+	GeneralTargets = map[int][]int{
 		3: {4, 12}, 4: {3, 5, 13}, 5: {4, 14},
 		12: {3, 13, 21}, 13: {4, 12, 14, 22}, 14: {5, 13, 23},
 		21: {12, 22}, 22: {13, 21, 23}, 23: {14, 22},
@@ -127,9 +127,11 @@ var (
 		75: {66, 76, 84}, 76: {67, 75, 77, 85}, 77: {68, 76, 86},
 		84: {75, 85}, 85: {76, 84, 86}, 86: {77, 85},
 	}
-	BoardEdgeList = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 45, 53, 54, 62, 63, 71, 72, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89}
-	BoardEdge     = map[int]bool{}
-	NumPosToEdge  = map[int][8]int{}
+	RedGeneralPos   = []int{66, 67, 68, 75, 76, 77, 84, 85, 86}
+	BlackGeneralPos = []int{3, 4, 5, 12, 13, 14, 21, 22, 23}
+	BoardEdgeList   = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 45, 53, 54, 62, 63, 71, 72, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89}
+	BoardEdge       = map[int]bool{}
+	NumPosToEdge    = map[int][8]int{}
 )
 
 func init() {

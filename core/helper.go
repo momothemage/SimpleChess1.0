@@ -96,6 +96,48 @@ func isSlidingPiece(piece int) bool { // 是否是远程攻击型棋子，车/�
 	return pieceType(piece) == Rook || pieceType(piece) == Cannon
 }
 
+func onUpperBoard(pos int) bool {
+	return pos >= 0 && pos <= 44
+}
+
+func onLowerBoard(pos int) bool {
+	return pos >= 45 && pos <= 89
+}
+
+func getEnemyGeneralPos(board [90]int, currentColor int) int {
+	posMap := make([]int, 0)
+	if currentColor == Red {
+		posMap = BlackGeneralPos
+	} else {
+		posMap = RedGeneralPos
+	}
+	for _, pos := range posMap {
+		if pieceType(board[pos]) == General {
+			return pos
+		}
+	}
+	return -1
+}
+
+func isFacedToGeneral(board [90]int, target int, currentColor int) bool {
+	offset := 9
+	if currentColor == Red {
+		offset = -9
+	}
+	target += offset
+	for target >= 0 && target <= 89 {
+		if pieceType(board[target]) == None {
+			target += offset
+			continue
+		} else if pieceType(board[target]) == General {
+			return true
+		} else {
+			return false
+		}
+	}
+	return false
+}
+
 func toInt(str string) int {
 	res, _ := strconv.Atoi(str)
 	return res
