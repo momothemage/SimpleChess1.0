@@ -138,6 +138,13 @@ func isFacedToGeneral(board [90]int, target int, currentColor int) bool {
 	return false
 }
 
+func Switch(color string) string {
+	if color == RedMove {
+		return BlackMove
+	}
+	return RedMove
+}
+
 func toInt(str string) int {
 	res, _ := strconv.Atoi(str)
 	return res

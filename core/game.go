@@ -2,10 +2,17 @@ package core
 
 import (
 	"bytes"
+	"fmt"
+	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
+	"github.com/hajimehoshi/ebiten/v2/text"
+	"golang.org/x/image/font"
+	"image/color"
 	"log"
 	"main/core/resource"
 	"strconv"
 	"strings"
+
+	"github.com/golang/freetype/truetype"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -16,10 +23,13 @@ import (
 type Game struct {
 	selected int //选中的格子
 	FEN      string
-	Moves    []Move
+	Moves    map[Move]bool
+
+	RedGeneral   int // todo: 帅的位置，需要被更新
+	BlackGeneral int // todo: 将的位置，需要被更新
 
 	board     [90]int               // 棋盘
-	turn      bool                  //轮到谁走，true红方，false黑方
+	checkmate bool                  // 是否被将军
 	lastMove  int                   //上一步棋
 	flipped   bool                  //是否翻转棋盘
 	gameOver  bool                  //是否游戏结束
@@ -81,6 +91,13 @@ func (g *Game) Update() error {
 	isRedMove := strings.Split(g.FEN, " ")[1] == RedMove
 	board := LoadPositionFromFEN(g.FEN)
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		if g.gameOver {
+			g.gameOver = false
+			g.FEN = InitialFEN
+			board = LoadPositionFromFEN(g.FEN)
+			g.selected = -1
+		}
+
 		x, y := ebiten.CursorPosition()
 		if x < OriginX || y < OriginY {
 			g.selected = -1
@@ -120,16 +137,25 @@ func (g *Game) move(origin, goal int) {
 		halfMoves = 0
 	}
 
-	g.generateMoves(board, colorToMove, origin) // todo: 直接生成所有可用的move，而不是只生成当前选中的棋子
+	g.generateMoves(board, colorToMove, origin)
 	// fmt.Println(g.Moves)
-	for _, move := range g.Moves {
-		if pieceType(board[goal]) == General {
-			g.gameOver = true
-		}
+	for move := range g.Moves {
 		if move.Target == goal {
+			if g.checkmate {
+				// todo: 计算所有敌方棋子的攻击范围，并判断此步是不是解除了将军/送将
+				// todo: 如果不能解，则此步不合法，需要此处break
+			}
+			if g.isCheckMate(g.getUnderAttackPos(board, Switch(colorToMove)), Switch(colorToMove)) {
+				g.checkmate = true
+			}
+			if g.checkmate && len(g.generateAllMoves(board, Switch(colorToMove))) == 0 {
+				g.gameOver = true
+			}
 			board[origin], board[goal] = 0, board[origin]
 			g.FEN = TransferBoardToPieces(board) + " " + switchPlayer(fenData[1]) + " " + strconv.Itoa(halfMoves) + " " + strconv.Itoa(totalMoves)
+			break
 		}
+
 	}
 }
 
@@ -163,7 +189,7 @@ func (g *Game) drawChess(x, y int, screen, img *ebiten.Image) {
 }
 
 func (g *Game) generateMoves(board [90]int, colorToMove string, start int) {
-	g.Moves = make([]Move, 0)
+	g.Moves = make(map[Move]bool)
 	piece := board[start]
 	if isRedPiece(piece) && colorToMove == RedMove || isBlackPiece(piece) && colorToMove == BlackMove {
 		switch pieceType(piece) {
@@ -192,14 +218,14 @@ func (g *Game) generateRookMoves(board [90]int, start, piece int) {
 			target := start + DirectionOffsets[i]*(n+1)
 			targetPiece := board[target]
 			if targetPiece == 0 {
-				g.Moves = append(g.Moves, Move{start, target})
+				g.Moves[Move{start, target}] = true
 				continue
 			}
 			// 被友方棋子阻挡
 			if pieceColor(targetPiece) == currentColor {
 				break
 			}
-			g.Moves = append(g.Moves, Move{start, target})
+			g.Moves[Move{start, target}] = true
 			// 被敌方棋子阻挡
 			if pieceColor(targetPiece) != currentColor {
 				break
@@ -217,13 +243,13 @@ func (g *Game) generateCannonMoves(board [90]int, start, piece int) {
 			targetPiece := board[target]
 			if !skipped {
 				if targetPiece == 0 {
-					g.Moves = append(g.Moves, Move{start, target})
+					g.Moves[Move{start, target}] = true
 				} else {
 					skipped = true
 				}
 			} else {
 				if targetPiece != 0 && pieceColor(targetPiece) != currentColor {
-					g.Moves = append(g.Moves, Move{start, target})
+					g.Moves[Move{start, target}] = true
 					break
 				}
 			}
@@ -240,21 +266,21 @@ func (g *Game) generateHorseMoves(board [90]int, start, piece int) {
 			target := start + HorseDirectionOffsets[2*i]
 			if target >= 0 && target <= 89 && !BoardEdge[start+HorseLameOffsets[2*i]] &&
 				board[start+HorseLameOffsets[2*i]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves = append(g.Moves, Move{start, target})
+				g.Moves[Move{start, target}] = true
 			}
 			target = start + HorseDirectionOffsets[2*i+1]
 			if target >= 0 && target <= 89 && !BoardEdge[start+HorseLameOffsets[2*i+1]] &&
 				board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves = append(g.Moves, Move{start, target})
+				g.Moves[Move{start, target}] = true
 			}
 		default:
 			target := start + HorseDirectionOffsets[2*i]
 			if board[start+HorseLameOffsets[2*i]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves = append(g.Moves, Move{start, target})
+				g.Moves[Move{start, target}] = true
 			}
 			target = start + HorseDirectionOffsets[2*i+1]
 			if board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves = append(g.Moves, Move{start, target})
+				g.Moves[Move{start, target}] = true
 			}
 		}
 	}
@@ -265,7 +291,7 @@ func (g *Game) generateElephantMoves(board [90]int, start int, piece int) {
 	targets := ElephantTargets[start]
 	for _, target := range targets {
 		if board[(start+target)/2] == None && pieceColor(board[target]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, target})
+			g.Moves[Move{start, target}] = true
 		}
 	}
 }
@@ -275,7 +301,7 @@ func (g *Game) generateAdvisorMoves(board [90]int, start int, piece int) {
 	targets := AdvisorTargets[start]
 	for _, target := range targets {
 		if pieceColor(board[target]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, target})
+			g.Moves[Move{start, target}] = true
 		}
 	}
 }
@@ -285,7 +311,7 @@ func (g *Game) generateGeneralMoves(board [90]int, start int, piece int) {
 	targets := GeneralTargets[start]
 	for _, target := range targets {
 		if pieceColor(board[target]) != currentColor && !isFacedToGeneral(board, target, currentColor) {
-			g.Moves = append(g.Moves, Move{start, target})
+			g.Moves[Move{start, target}] = true
 		}
 	}
 }
@@ -294,27 +320,54 @@ func (g *Game) generateSoldierMoves(board [90]int, start int, piece int) {
 	currentColor := pieceColor(piece)
 	if isRedPiece(piece) {
 		if pieceColor(board[start-9]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, start - 9})
+			g.Moves[Move{start, start - 9}] = true
 		} else if onUpperBoard(start) && pieceColor(board[start-1]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, start - 1})
+			g.Moves[Move{start, start - 1}] = true
 		} else if onUpperBoard(start) && pieceColor(board[start+1]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, start + 1})
+			g.Moves[Move{start, start + 1}] = true
 		}
 	} else {
 		if pieceColor(board[start+9]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, start + 9})
+			g.Moves[Move{start, start + 9}] = true
 		} else if onLowerBoard(start) && pieceColor(board[start-1]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, start - 1})
+			g.Moves[Move{start, start - 1}] = true
 		} else if onLowerBoard(start) && pieceColor(board[start+1]) != currentColor {
-			g.Moves = append(g.Moves, Move{start, start + 1})
+			g.Moves[Move{start, start + 1}] = true
 		}
 	}
 }
 
 // messageBox 提示
 func (g *Game) messageBox(screen *ebiten.Image) {
-	// todo: 弹出提示并阻塞进程
+	tt, err := truetype.Parse(fonts.MPlus1pRegular_ttf)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+	arcadeFont := truetype.NewFace(tt, &truetype.Options{
+		Size:    24,
+		DPI:     72,
+		Hinting: font.HintingFull,
+	})
+	text.Draw(screen, "Click mouse to restart", arcadeFont, 150, 320, color.Black)
 	return
+}
+
+func (g *Game) generateAllMoves(board [90]int, colorToMove string) []Move {
+	// todo: 直接生成所有可用的move，而不是只生成当前选中的棋子
+	return nil
+}
+
+func (g *Game) getUnderAttackPos(board [90]int, colorToMove string) map[int]bool {
+	// todo: 获取所有可能遭受攻击的点位
+	return nil
+}
+
+func (g *Game) isCheckMate(underAttackPos map[int]bool, color string) bool {
+	if color == RedMove {
+		return underAttackPos[g.RedGeneral]
+	}
+	return underAttackPos[g.BlackGeneral]
 }
 
 // NewGame 创建象棋程序
