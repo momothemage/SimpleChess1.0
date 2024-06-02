@@ -25,10 +25,13 @@ type Game struct {
 	FEN      string
 	Moves    map[Move]bool
 
-	RedGeneral   int // todo: 帅的位置，需要被更新
-	BlackGeneral int // todo: 将的位置，需要被更新
+	RedGeneral   int
+	BlackGeneral int
 
-	board     [90]int               // 棋盘
+	board         [90]int // 棋盘
+	colorToMove   string  // 当前行棋的颜色
+	colorOpponent string  // 当前不行棋的颜色
+
 	checkmate bool                  // 是否被将军
 	lastMove  int                   //上一步棋
 	flipped   bool                  //是否翻转棋盘
@@ -129,30 +132,50 @@ func (g *Game) Update() error {
 
 func (g *Game) move(origin, goal int) {
 	fenData := strings.Split(g.FEN, " ")
-	board := LoadPositionByPieces(fenData[0])
-	colorToMove := fenData[1]
+	g.board = LoadPositionByPieces(fenData[0])
+	g.colorToMove = fenData[1]
+	g.colorOpponent = Switch(g.colorToMove)
 	halfMoves := toInt(fenData[2])
 	totalMoves := toInt(fenData[3]) + 1
-	if board[goal] != 0 {
+	if g.board[goal] != 0 {
 		halfMoves = 0
 	}
 
-	g.generateMoves(board, colorToMove, origin)
+	fmt.Println(len(g.generateAllMoves(g.colorToMove)))
+	g.generateMoves(origin)
 	// fmt.Println(g.Moves)
 	for move := range g.Moves {
 		if move.Target == goal {
-			if g.checkmate {
-				// todo: 计算所有敌方棋子的攻击范围，并判断此步是不是解除了将军/送将
-				// todo: 如果不能解，则此步不合法，需要此处break
+			g.board[origin], g.board[goal] = 0, g.board[origin]
+			generalPos := g.RedGeneral
+			if g.colorToMove == BlackMove {
+				generalPos = g.BlackGeneral
 			}
-			if g.isCheckMate(g.getUnderAttackPos(board, Switch(colorToMove)), Switch(colorToMove)) {
+			if isFacedToGeneral(g.board, generalPos, pieceColor(g.board[goal])) {
+				break
+			}
+
+			if g.isCheckMate(g.getUnderAttackPos(g.colorOpponent), g.colorToMove) {
+				// 送将
+				break
+			}
+			if g.isCheckMate(g.getUnderAttackPos(g.colorToMove), g.colorOpponent) {
 				g.checkmate = true
 			}
-			if g.checkmate && len(g.generateAllMoves(board, Switch(colorToMove))) == 0 {
+
+			if g.checkmate && len(g.generateAllMoves(g.colorOpponent)) == 0 {
+				//  todo: len(g.generateAllMoves(g.colorOpponent)) == 0 需要排除送将的情况
 				g.gameOver = true
 			}
-			board[origin], board[goal] = 0, board[origin]
-			g.FEN = TransferBoardToPieces(board) + " " + switchPlayer(fenData[1]) + " " + strconv.Itoa(halfMoves) + " " + strconv.Itoa(totalMoves)
+
+			if pieceType(g.board[goal]) == General {
+				if g.colorToMove == RedMove {
+					g.RedGeneral = goal
+				} else {
+					g.BlackGeneral = goal
+				}
+			}
+			g.FEN = TransferBoardToPieces(g.board) + " " + switchPlayer(fenData[1]) + " " + strconv.Itoa(halfMoves) + " " + strconv.Itoa(totalMoves)
 			break
 		}
 
@@ -188,76 +211,81 @@ func (g *Game) drawChess(x, y int, screen, img *ebiten.Image) {
 	screen.DrawImage(img, op)
 }
 
-func (g *Game) generateMoves(board [90]int, colorToMove string, start int) {
+func (g *Game) generateMoves(start int) {
 	g.Moves = make(map[Move]bool)
-	piece := board[start]
-	if isRedPiece(piece) && colorToMove == RedMove || isBlackPiece(piece) && colorToMove == BlackMove {
+	piece := g.board[start]
+	if isRedPiece(piece) && g.colorToMove == RedMove || isBlackPiece(piece) && g.colorToMove == BlackMove {
 		switch pieceType(piece) {
 		case Rook:
-			g.generateRookMoves(board, start, piece)
+			g.Moves = g.generateRookMoves(start, piece)
 		case Cannon:
-			g.generateCannonMoves(board, start, piece)
+			g.Moves = g.generateCannonMoves(start, piece)
 		case Horse:
-			g.generateHorseMoves(board, start, piece)
+			g.Moves = g.generateHorseMoves(start, piece)
 		case Elephant:
-			g.generateElephantMoves(board, start, piece)
+			g.Moves = g.generateElephantMoves(start, piece)
 		case Advisor:
-			g.generateAdvisorMoves(board, start, piece)
+			g.Moves = g.generateAdvisorMoves(start, piece)
 		case General:
-			g.generateGeneralMoves(board, start, piece)
+			g.Moves = g.generateGeneralMoves(start, piece)
 		case Soldier:
-			g.generateSoldierMoves(board, start, piece)
+			g.Moves = g.generateSoldierMoves(start, piece)
 		}
 	}
 }
 
-func (g *Game) generateRookMoves(board [90]int, start, piece int) {
+func (g *Game) generateRookMoves(start, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	for i := 0; i < 4; i++ {
 		for n := 0; n < NumPosToEdge[start][i]; n++ {
 			target := start + DirectionOffsets[i]*(n+1)
-			targetPiece := board[target]
+			targetPiece := g.board[target]
 			if targetPiece == 0 {
-				g.Moves[Move{start, target}] = true
+				moves[Move{start, target}] = true
 				continue
 			}
 			// 被友方棋子阻挡
 			if pieceColor(targetPiece) == currentColor {
 				break
 			}
-			g.Moves[Move{start, target}] = true
+			moves[Move{start, target}] = true
 			// 被敌方棋子阻挡
 			if pieceColor(targetPiece) != currentColor {
 				break
 			}
 		}
 	}
+	return moves
 }
 
-func (g *Game) generateCannonMoves(board [90]int, start, piece int) {
+func (g *Game) generateCannonMoves(start, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	for i := 0; i < 4; i++ {
 		skipped := false
 		for n := 0; n < NumPosToEdge[start][i]; n++ {
 			target := start + DirectionOffsets[i]*(n+1)
-			targetPiece := board[target]
+			targetPiece := g.board[target]
 			if !skipped {
 				if targetPiece == 0 {
-					g.Moves[Move{start, target}] = true
+					moves[Move{start, target}] = true
 				} else {
 					skipped = true
 				}
 			} else {
 				if targetPiece != 0 && pieceColor(targetPiece) != currentColor {
-					g.Moves[Move{start, target}] = true
+					moves[Move{start, target}] = true
 					break
 				}
 			}
 		}
 	}
+	return moves
 }
 
-func (g *Game) generateHorseMoves(board [90]int, start, piece int) {
+func (g *Game) generateHorseMoves(start, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	for i := 0; i < 4; i++ {
 		switch NumPosToEdge[start][i+4] {
@@ -265,83 +293,95 @@ func (g *Game) generateHorseMoves(board [90]int, start, piece int) {
 			// 判断蹩马腿的位置是否在棋盘边缘，如果在的话说明这个目标点一定是不可达的。
 			target := start + HorseDirectionOffsets[2*i]
 			if target >= 0 && target <= 89 && !BoardEdge[start+HorseLameOffsets[2*i]] &&
-				board[start+HorseLameOffsets[2*i]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves[Move{start, target}] = true
+				g.board[start+HorseLameOffsets[2*i]] == None && pieceColor(g.board[target]) != currentColor {
+				moves[Move{start, target}] = true
 			}
 			target = start + HorseDirectionOffsets[2*i+1]
 			if target >= 0 && target <= 89 && !BoardEdge[start+HorseLameOffsets[2*i+1]] &&
-				board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves[Move{start, target}] = true
+				g.board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(g.board[target]) != currentColor {
+				moves[Move{start, target}] = true
 			}
 		default:
 			target := start + HorseDirectionOffsets[2*i]
-			if board[start+HorseLameOffsets[2*i]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves[Move{start, target}] = true
+			if g.board[start+HorseLameOffsets[2*i]] == None && pieceColor(g.board[target]) != currentColor {
+				moves[Move{start, target}] = true
 			}
 			target = start + HorseDirectionOffsets[2*i+1]
-			if board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(board[target]) != currentColor {
-				g.Moves[Move{start, target}] = true
+			if g.board[start+HorseLameOffsets[2*i+1]] == None && pieceColor(g.board[target]) != currentColor {
+				moves[Move{start, target}] = true
 			}
 		}
 	}
+	return moves
 }
 
-func (g *Game) generateElephantMoves(board [90]int, start int, piece int) {
+func (g *Game) generateElephantMoves(start int, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	targets := ElephantTargets[start]
 	for _, target := range targets {
-		if board[(start+target)/2] == None && pieceColor(board[target]) != currentColor {
-			g.Moves[Move{start, target}] = true
+		if g.board[(start+target)/2] == None && pieceColor(g.board[target]) != currentColor {
+			moves[Move{start, target}] = true
 		}
 	}
+	return moves
 }
 
-func (g *Game) generateAdvisorMoves(board [90]int, start int, piece int) {
+func (g *Game) generateAdvisorMoves(start int, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	targets := AdvisorTargets[start]
 	for _, target := range targets {
-		if pieceColor(board[target]) != currentColor {
-			g.Moves[Move{start, target}] = true
+		if pieceColor(g.board[target]) != currentColor {
+			moves[Move{start, target}] = true
 		}
 	}
+	return moves
 }
 
-func (g *Game) generateGeneralMoves(board [90]int, start int, piece int) {
+func (g *Game) generateGeneralMoves(start int, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	targets := GeneralTargets[start]
 	for _, target := range targets {
-		if pieceColor(board[target]) != currentColor && !isFacedToGeneral(board, target, currentColor) {
-			g.Moves[Move{start, target}] = true
+		if pieceColor(g.board[target]) != currentColor && !isFacedToGeneral(g.board, target, currentColor) {
+			moves[Move{start, target}] = true
 		}
 	}
+	return moves
 }
 
-func (g *Game) generateSoldierMoves(board [90]int, start int, piece int) {
+func (g *Game) generateSoldierMoves(start int, piece int) map[Move]bool {
+	moves := make(map[Move]bool)
 	currentColor := pieceColor(piece)
 	if isRedPiece(piece) {
-		if pieceColor(board[start-9]) != currentColor {
-			g.Moves[Move{start, start - 9}] = true
-		} else if onUpperBoard(start) && pieceColor(board[start-1]) != currentColor {
-			g.Moves[Move{start, start - 1}] = true
-		} else if onUpperBoard(start) && pieceColor(board[start+1]) != currentColor {
-			g.Moves[Move{start, start + 1}] = true
+		if pieceColor(g.board[start-9]) != currentColor {
+			moves[Move{start, start - 9}] = true
+		}
+		if onUpperBoard(start) && pieceColor(g.board[start-1]) != currentColor {
+			moves[Move{start, start - 1}] = true
+		}
+		if onUpperBoard(start) && pieceColor(g.board[start+1]) != currentColor {
+			moves[Move{start, start + 1}] = true
 		}
 	} else {
-		if pieceColor(board[start+9]) != currentColor {
-			g.Moves[Move{start, start + 9}] = true
-		} else if onLowerBoard(start) && pieceColor(board[start-1]) != currentColor {
-			g.Moves[Move{start, start - 1}] = true
-		} else if onLowerBoard(start) && pieceColor(board[start+1]) != currentColor {
-			g.Moves[Move{start, start + 1}] = true
+		if pieceColor(g.board[start+9]) != currentColor {
+			moves[Move{start, start + 9}] = true
+		}
+		if onLowerBoard(start) && pieceColor(g.board[start-1]) != currentColor {
+			moves[Move{start, start - 1}] = true
+		}
+		if onLowerBoard(start) && pieceColor(g.board[start+1]) != currentColor {
+			moves[Move{start, start + 1}] = true
 		}
 	}
+	return moves
 }
 
 // messageBox 提示
 func (g *Game) messageBox(screen *ebiten.Image) {
 	tt, err := truetype.Parse(fonts.MPlus1pRegular_ttf)
 	if err != nil {
-		fmt.Print(err)
 		return
 	}
 	arcadeFont := truetype.NewFace(tt, &truetype.Options{
@@ -353,14 +393,43 @@ func (g *Game) messageBox(screen *ebiten.Image) {
 	return
 }
 
-func (g *Game) generateAllMoves(board [90]int, colorToMove string) []Move {
-	// todo: 直接生成所有可用的move，而不是只生成当前选中的棋子
-	return nil
+func (g *Game) generateAllMoves(color string) map[Move]bool {
+	allMoves := make(map[Move]bool)
+	for pos, piece := range g.board {
+		moves := make(map[Move]bool)
+		if isRedPiece(piece) && color == RedMove || isBlackPiece(piece) && color == BlackMove {
+			switch pieceType(piece) {
+			case Rook:
+				moves = g.generateRookMoves(pos, piece)
+			case Cannon:
+				moves = g.generateCannonMoves(pos, piece)
+			case Horse:
+				moves = g.generateHorseMoves(pos, piece)
+			case Elephant:
+				moves = g.generateElephantMoves(pos, piece)
+			case Advisor:
+				moves = g.generateAdvisorMoves(pos, piece)
+			case General:
+				moves = g.generateGeneralMoves(pos, piece)
+			case Soldier:
+				moves = g.generateSoldierMoves(pos, piece)
+			}
+		}
+		for move := range moves {
+			allMoves[move] = true
+		}
+	}
+	return allMoves
 }
 
-func (g *Game) getUnderAttackPos(board [90]int, colorToMove string) map[int]bool {
-	// todo: 获取所有可能遭受攻击的点位
-	return nil
+func (g *Game) getUnderAttackPos(color string) map[int]bool {
+	underAttackPos := make(map[int]bool)
+	// 获取所有可能遭受攻击的点位
+	moves := g.generateAllMoves(color)
+	for move := range moves {
+		underAttackPos[move.Target] = true
+	}
+	return underAttackPos
 }
 
 func (g *Game) isCheckMate(underAttackPos map[int]bool, color string) bool {
@@ -373,8 +442,10 @@ func (g *Game) isCheckMate(underAttackPos map[int]bool, color string) bool {
 // NewGame 创建象棋程序
 func NewGame() {
 	game := &Game{
-		selected: -1,
-		FEN:      InitialFEN,
+		RedGeneral:   85,
+		BlackGeneral: 4,
+		selected:     -1,
+		FEN:          InitialFEN,
 	}
 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
 	ebiten.SetWindowTitle("chess")

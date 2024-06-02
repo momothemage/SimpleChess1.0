@@ -119,17 +119,17 @@ func getEnemyGeneralPos(board [90]int, currentColor int) int {
 	return -1
 }
 
-func isFacedToGeneral(board [90]int, target int, currentColor int) bool {
+func isFacedToGeneral(board [90]int, generalPos int, currentColor int) bool {
 	offset := 9
 	if currentColor == Red {
 		offset = -9
 	}
-	target += offset
-	for target >= 0 && target <= 89 {
-		if pieceType(board[target]) == None {
-			target += offset
+	generalPos += offset
+	for generalPos >= 0 && generalPos <= 89 {
+		if pieceType(board[generalPos]) == None {
+			generalPos += offset
 			continue
-		} else if pieceType(board[target]) == General {
+		} else if pieceType(board[generalPos]) == General {
 			return true
 		} else {
 			return false
