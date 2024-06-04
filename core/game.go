@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
 	"github.com/hajimehoshi/ebiten/v2/text"
 	"golang.org/x/image/font"
@@ -141,9 +140,7 @@ func (g *Game) move(origin, goal int) {
 		halfMoves = 0
 	}
 
-	fmt.Println(len(g.generateAllMoves(g.colorToMove)))
 	g.generateMoves(origin)
-	// fmt.Println(g.Moves)
 	for move := range g.Moves {
 		if move.Target == goal {
 			g.board[origin], g.board[goal] = 0, g.board[origin]
@@ -155,17 +152,51 @@ func (g *Game) move(origin, goal int) {
 				break
 			}
 
-			if g.isCheckMate(g.getUnderAttackPos(g.colorOpponent), g.colorToMove) {
+			opponentAllMoves := g.generateAllMoves(g.colorOpponent)
+			if g.isCheckMate(getUnderAttackPos(opponentAllMoves), g.colorToMove) {
 				// 送将
 				break
 			}
-			if g.isCheckMate(g.getUnderAttackPos(g.colorToMove), g.colorOpponent) {
+
+			if g.isCheckMate(getUnderAttackPos(g.generateAllMoves(g.colorToMove)), g.colorOpponent) {
 				g.checkmate = true
 			}
 
-			if g.checkmate && len(g.generateAllMoves(g.colorOpponent)) == 0 {
-				//  todo: len(g.generateAllMoves(g.colorOpponent)) == 0 需要排除送将的情况
-				g.gameOver = true
+			if g.checkmate {
+				for opponentMove := range opponentAllMoves {
+					startPiece := g.board[opponentMove.Start]
+					targetPiece := g.board[opponentMove.Target]
+					g.board[opponentMove.Start], g.board[opponentMove.Target] = 0, g.board[opponentMove.Start]
+
+					tmpGeneralPos := -1
+					if pieceType(startPiece) == General {
+						if g.colorOpponent == RedMove {
+							tmpGeneralPos = g.RedGeneral
+							g.RedGeneral = opponentMove.Target
+						} else {
+							tmpGeneralPos = g.BlackGeneral
+							g.BlackGeneral = opponentMove.Target
+						}
+					}
+
+					if g.isCheckMate(getUnderAttackPos(g.generateAllMoves(g.colorToMove)), g.colorOpponent) {
+						delete(opponentAllMoves, opponentMove)
+					}
+
+					// 恢复
+					g.board[opponentMove.Start], g.board[opponentMove.Target] = startPiece, targetPiece
+					if pieceType(startPiece) == General {
+						if g.colorOpponent == RedMove {
+							g.RedGeneral = tmpGeneralPos
+						} else {
+							g.BlackGeneral = tmpGeneralPos
+						}
+					}
+				}
+
+				if len(opponentAllMoves) == 0 {
+					g.gameOver = true
+				}
 			}
 
 			if pieceType(g.board[goal]) == General {
@@ -422,11 +453,10 @@ func (g *Game) generateAllMoves(color string) map[Move]bool {
 	return allMoves
 }
 
-func (g *Game) getUnderAttackPos(color string) map[int]bool {
+// 获取所有可能遭受攻击的点位
+func getUnderAttackPos(allMoves map[Move]bool) map[int]bool {
 	underAttackPos := make(map[int]bool)
-	// 获取所有可能遭受攻击的点位
-	moves := g.generateAllMoves(color)
-	for move := range moves {
+	for move := range allMoves {
 		underAttackPos[move.Target] = true
 	}
 	return underAttackPos
